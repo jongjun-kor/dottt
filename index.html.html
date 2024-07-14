@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>좌표 점 찾기 게임</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            touch-action: manipulation;
+        }
+        #gameBoard {
+            position: relative;
+            width: 300px;
+            height: 300px;
+            border: 1px solid #999;
+            margin-bottom: 20px;
+        }
+        .gridLine {
+            position: absolute;
+            background-color: #ddd;
+        }
+        .point {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: red;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .player {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: blue;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        #controls {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px;
+            font-size: 16px;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #e0e0e0;
+        }
+        button.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        #numbers {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 5px;
+        }
+        #startButton {
+            margin-bottom: 20px;
+            background-color: #4CAF50;
+            color: white;
+        }
+        #startButton:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameBoard"></div>
+    <button id="startButton">게임 시작</button>
+    <div id="controls">
+        <button id="up">위</button>
+        <button id="left">왼쪽</button>
+        <button id="right">오른쪽</button>
+        <button id="down">아래</button>
+    </div>
+    <div id="numbers"></div>
+    <div id="timer">시간: 0초</div>
+    <div id="remainingPoints">남은 점: 8</div>
+    <script>
+        const board = document.getElementById('gameBoard');
+        const startButton = document.getElementById('startButton');
+        const timerDisplay = document.getElementById('timer');
+        const remainingPointsDisplay = document.getElementById('remainingPoints');
+        const points = [];
+        let playerPosition = { x: 0, y: 0 };
+        let startTime;
+        let timerInterval;
+        let remainingPoints = 8;
+        let gameStarted = false;
+        let activeDirection = null;
+
+        function createBoard() {
+            for (let i = 1; i < 10; i++) {
+                const verticalLine = document.createElement('div');
+                verticalLine.className = 'gridLine';
+                verticalLine.style.left = `${i * 30}px`;
+                verticalLine.style.top = '0';
+                verticalLine.style.width = '1px';
+                verticalLine.style.height = '100%';
+                board.appendChild(verticalLine);
+
+                const horizontalLine = document.createElement('div');
+                horizontalLine.className = 'gridLine';
+                horizontalLine.style.left = '0';
+                horizontalLine.style.top = `${i * 30}px`;
+                horizontalLine.style.width = '100%';
+                horizontalLine.style.height = '1px';
+                board.appendChild(horizontalLine);
+            }
+        }
+
+        function generatePoints() {
+            while (points.length < 8) {
+                const x = Math.floor(Math.random() * 11);
+                const y = Math.floor(Math.random() * 11);
+                if (!points.some(p => p.x === x && p.y === y) && !(x === 0 && y === 0)) {
+                    points.push({ x, y });
+                    const point = document.createElement('div');
+                    point.className = 'point';
+                    point.style.left = `${x * 30}px`;
+                    point.style.top = `${300 - y * 30}px`;
+                    board.appendChild(point);
+                }
+            }
+        }
+
+        function updatePlayerPosition() {
+            const player = document.querySelector('.player') || document.createElement('div');
+            player.className = 'player';
+            player.style.left = `${playerPosition.x * 30}px`;
+            player.style.top = `${300 - playerPosition.y * 30}px`;
+            board.appendChild(player);
+
+            const pointIndex = points.findIndex(p => p.x === playerPosition.x && p.y === playerPosition.y);
+            if (pointIndex !== -1) {
+                points.splice(pointIndex, 1);
+                const pointElement = document.querySelector(`.point[style="left: ${playerPosition.x * 30}px; top: ${300 - playerPosition.y * 30}px;"]`);
+                if (pointElement) pointElement.remove();
+                remainingPoints--;
+                remainingPointsDisplay.textContent = `남은 점: ${remainingPoints}`;
+
+                if (remainingPoints === 0) {
+                    clearInterval(timerInterval);
+                    const endTime = (Date.now() - startTime) / 1000;
+                    alert(`게임 종료! 걸린 시간: ${endTime.toFixed(2)}초`);
+                    gameStarted = false;
+                    startButton.textContent = '다시 시작';
+                    startButton.disabled = false;
+                }
+            }
+        }
+
+        function movePlayer(dx, dy) {
+            if (!gameStarted) return;
+            const newX = Math.max(0, Math.min(10, playerPosition.x + dx));
+            const newY = Math.max(0, Math.min(10, playerPosition.y + dy));
+            playerPosition = { x: newX, y: newY };
+            updatePlayerPosition();
+            resetDirectionButtons();
+        }
+
+        function setupControls() {
+            const directions = ['up', 'down', 'left', 'right'];
+            directions.forEach(dir => {
+                document.getElementById(dir).addEventListener('click', () => {
+                    resetDirectionButtons();
+                    document.getElementById(dir).classList.add('active');
+                    activeDirection = dir;
+                    activateNumberButtons();
+                });
+            });
+
+            const numbersContainer = document.getElementById('numbers');
+            for (let i = 1; i <= 10; i++) {
+                const button = document.createElement('button');
+                button.textContent = i;
+                button.addEventListener('click', () => {
+                    if (activeDirection) {
+                        const move = {
+                            up: [0, 1],
+                            down: [0, -1],
+                            left: [-1, 0],
+                            right: [1, 0]
+                        }[activeDirection];
+                        movePlayer(move[0] * i, move[1] * i);
+                    }
+                });
+                numbersContainer.appendChild(button);
+            }
+        }
+
+        function resetDirectionButtons() {
+            const directions = ['up', 'down', 'left', 'right'];
+            directions.forEach(dir => {
+                document.getElementById(dir).classList.remove('active');
+            });
+            activeDirection = null;
+            deactivateNumberButtons();
+        }
+
+        function activateNumberButtons() {
+            const numberButtons = document.querySelectorAll('#numbers button');
+            numberButtons.forEach(button => {
+                button.classList.add('active');
+            });
+        }
+
+        function deactivateNumberButtons() {
+            const numberButtons = document.querySelectorAll('#numbers button');
+            numberButtons.forEach(button => {
+                button.classList.remove('active');
+            });
+        }
+
+        function startTimer() {
+            startTime = Date.now();
+            timerInterval = setInterval(() => {
+                const elapsedTime = (Date.now() - startTime) / 1000;
+                timerDisplay.textContent = `시간: ${elapsedTime.toFixed(1)}초`;
+            }, 100);
+        }
+
+        function startGame() {
+            board.innerHTML = '';
+            createBoard();
+            generatePoints();
+            playerPosition = { x: 0, y: 0 };
+            updatePlayerPosition();
+            remainingPoints = 8;
+            remainingPointsDisplay.textContent = `남은 점: ${remainingPoints}`;
+            startTimer();
+            gameStarted = true;
+            startButton.disabled = true;
+            resetDirectionButtons();
+        }
+
+        createBoard();
+        setupControls();
+        startButton.addEventListener('click', startGame);
+    </script>
+</body>
+</html>
